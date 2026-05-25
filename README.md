@@ -1,311 +1,259 @@
-# 🔐 oauth-keycloak-lab
+# oauth-keycloak-lab
 
-Projeto de estudo prático sobre **OAuth 2.0** e **OpenID Connect (OIDC)**, construído com uma abordagem de **arquitetura evolutiva**: começamos com autenticação implementada manualmente e evoluímos até um Identity Provider dedicado com os principais fluxos OAuth.
+Projeto de portfólio e estudo prático sobre **OAuth 2.0** e **OpenID Connect (OIDC)**, construído com arquitetura evolutiva: cada fase expõe um problema real que a próxima resolve.
 
-O objetivo não é só fazer funcionar — é **entender o porquê de cada decisão**, sentindo na prática os problemas que cada evolução resolve.
+O domínio é um **Task Manager** — simples o suficiente para não desviar o foco, realista o suficiente para justificar roles, escopos e múltiplos tipos de client.
+
+O objetivo não é só fazer funcionar — é entender o porquê de cada decisão, sentindo na prática os problemas que cada fluxo OAuth resolve.
 
 ---
 
-## 🎯 O que você vai aprender
+## O que você vai aprender
 
-- Por que delegar autenticação para um serviço dedicado
+- Por que autenticação acoplada à API de negócio é um problema
+- Como extrair responsabilidades de autenticação para um serviço dedicado
 - O que é um Identity Provider e qual problema ele resolve
-- Como configurar o **Keycloak** como IdP em ambiente local
-- Os conceitos fundamentais de **OAuth 2.0** e **OpenID Connect**
-- Como implementar e testar os principais fluxos OAuth:
-  - Authorization Code + PKCE (SPA)
-  - Client Credentials (M2M)
-  - Refresh Token (gerenciamento de sessão)
-- Como proteger APIs Node.js com tokens JWT
+- Como configurar o Keycloak como IdP em ambiente local
+- Os conceitos fundamentais de OAuth 2.0 e OpenID Connect
+- Como implementar os principais fluxos OAuth:
+  - Authorization Code + PKCE (SPA com usuário)
+  - Client Credentials (M2M sem usuário)
+  - Refresh Token (gestão de sessão e logout federado)
+- Como proteger APIs Node.js com tokens JWT via JWKS
 - Como consumir uma API protegida a partir de uma SPA React
 
 ---
 
-## 🧰 Stack
+## Stack
 
 | Camada | Tecnologia |
 |---|---|
-| Identity Provider | [Keycloak](https://www.keycloak.org/) via Docker |
+| Runtime | Node.js 24.16.0 LTS |
+| Linguagem | TypeScript (ESM) |
+| Identity Provider | Keycloak via Docker |
 | Backend / Resource Server | Node.js + Express |
 | Frontend / Client | React + Vite |
-| Biblioteca OIDC (frontend) | [oidc-client-ts](https://github.com/authts/oidc-client-ts) |
-| Validação JWT (backend) | [jose](https://github.com/panva/jose) |
+| Banco de dados | SQLite via `node:sqlite` (nativo do Node.js 24) |
+| Validação JWT | jose |
+| Biblioteca OIDC (frontend) | oidc-client-ts |
+| Testes | Vitest (TDD) |
+| Linting / Formatação | ESLint + Prettier |
+| Documentação de API | OpenAPI (spec-first) + Swagger UI |
+| Documentação do projeto | MkDocs + Material (GitHub Pages) |
 | Containerização | Docker + Docker Compose |
 
 ---
 
-## 🌿 Modelo de Branches
+## Modelo de Branches
 
-Cada branch representa um **snapshot completo e funcional** de uma fase do projeto. Você pode fazer checkout de qualquer branch e ter o ambiente rodando de forma independente, sem depender da ordem de evolução.
+Cada branch representa um **snapshot completo e independente** de uma fase. Qualquer branch pode ser clonada e executada de forma isolada — sem depender de outra fase.
 
 ```
-main
+main                              ← documentação geral e ADRs
 │
-├── fase/1-auth-manual
-├── fase/2-auth-service
-├── fase/3-keycloak-setup
-├── fase/4-authorization-code-pkce
-├── fase/5-client-credentials
-└── fase/6-refresh-token
+├── fase/1-auth-manual            ← API monolítica com auth acoplada
+├── fase/2-auth-service           ← auth-service dedicado + resource-server
+├── fase/3-keycloak-setup         ← Keycloak como IdP
+├── fase/4-authorization-code-pkce← Authorization Code + PKCE (SPA)
+├── fase/5-client-credentials     ← Client Credentials (M2M)
+└── fase/6-refresh-token          ← Refresh Token e logout federado
 ```
 
-> Cada branch possui seu próprio `README.md` com instruções de setup e os conceitos específicos daquela fase.
+Cada branch tem seu próprio `README.md` com contexto do problema, instruções de setup e o que observar.
 
 ---
 
-## 🗺️ Roteiro de Fases
-
-### Visão Geral da Evolução
-
-```mermaid
-timeline
-    title Evolução do Projeto
-    fase/1-auth-manual       : Auth manual com JWT próprio
-    fase/2-auth-service      : Extração para Auth Service dedicado
-    fase/3-keycloak-setup    : Substituição pelo Keycloak
-    fase/4-authorization-code-pkce : Authorization Code + PKCE
-    fase/5-client-credentials : Client Credentials (M2M)
-    fase/6-refresh-token     : Refresh Token e gestão de sessão
-```
-
----
+## Roteiro de Fases
 
 ### Fase 1 — `fase/1-auth-manual`
-**Auth implementada na mão**
+**Problema: autenticação acoplada à API de negócio**
 
-O ponto de partida. Nessa fase a autenticação existe dentro da própria API: a aplicação gerencia usuários, valida senhas e emite seus próprios JWTs.
-
-**O que você vai construir:**
-- Endpoint `POST /auth/register` e `POST /auth/login`
-- Geração de JWT assinado com chave local
-- Middleware de autenticação que valida esse JWT
-- Rota protegida que retorna dados do usuário autenticado
-
-**Arquitetura desta fase:**
+O ponto de partida. A API gerencia tudo: cadastro de usuários, validação de senha, emissão de JWT com chave local e proteção de rotas de tarefas.
 
 ```mermaid
 sequenceDiagram
-    actor User
-    participant API as Backend (Node.js)
-    participant DB as Banco de Dados
+    actor Usuario
+    participant API as API (Node.js)
+    participant DB as SQLite
 
-    User->>API: POST /auth/login (email + senha)
+    Usuario->>API: POST /auth/registrar (nome + email + senha)
+    API->>DB: Cria usuário com senha em hash
+    DB-->>API: Usuário criado
+    API-->>Usuario: 201 Created
+
+    Usuario->>API: POST /auth/login (email + senha)
     API->>DB: Busca usuário e valida senha
     DB-->>API: Usuário encontrado
-    API-->>User: access_token (JWT assinado pela API)
+    API-->>Usuario: access_token (JWT assinado pela API)
 
-    User->>API: GET /protected (Bearer token)
+    Usuario->>API: GET /tarefas (Bearer token)
     API->>API: Valida assinatura do JWT
-    API-->>User: 200 OK + dados protegidos
+    API-->>Usuario: 200 OK + tarefas do usuário
 ```
 
-**Por que isso é um problema:**
-Ao final desta fase você vai perceber os limites dessa abordagem — a API acumula responsabilidades que não são dela: gerenciar usuários, senhas, sessões, emitir tokens. Qualquer outro serviço que precise autenticar usuários teria que replicar toda essa lógica.
+**O que o leitor vai perceber:** a API acumula responsabilidades que não são dela. Qualquer outro serviço que precisasse autenticar usuários teria que replicar toda essa lógica.
 
 ---
 
 ### Fase 2 — `fase/2-auth-service`
-**Extração para um Auth Service dedicado**
+**Solução parcial: separar a responsabilidade de autenticação**
 
-A responsabilidade de autenticação é extraída para um serviço separado. A API principal deixa de conhecer usuários e passa a apenas validar tokens emitidos pelo Auth Service.
-
-**O que você vai construir:**
-- Um serviço Node.js dedicado (`auth-service`) responsável por login e emissão de tokens
-- A API principal (`resource-server`) que só valida tokens, sem saber de usuários
-- Comunicação entre os dois serviços
-
-**Arquitetura desta fase:**
+A autenticação é extraída para um `auth-service` dedicado. O `resource-server` passa a apenas validar tokens — sem conhecer usuários ou senhas.
 
 ```mermaid
 sequenceDiagram
-    actor User
-    participant API as Resource Server (Node.js)
-    participant Auth as Auth Service (Node.js)
+    actor Usuario
+    participant RS as Resource Server
+    participant AS as Auth Service
 
-    User->>Auth: POST /login (email + senha)
-    Auth-->>User: access_token
+    Usuario->>AS: POST /auth/login (email + senha)
+    AS-->>Usuario: access_token
 
-    User->>API: GET /protected (Bearer token)
-    API->>Auth: Valida token
-    Auth-->>API: Token válido + claims
-    API-->>User: 200 OK + dados protegidos
+    Usuario->>RS: GET /tarefas (Bearer token)
+    RS->>AS: Valida token
+    AS-->>RS: Token válido + claims
+    RS-->>Usuario: 200 OK + tarefas
 ```
 
-**O que você vai perceber:**
-Essa separação já é uma melhora real. Mas o Auth Service ainda é um código que você mantém — e com isso vêm problemas como: rotação de chaves, armazenamento seguro de senhas, suporte a múltiplos clients, MFA, etc. Chega um ponto em que faz mais sentido usar uma solução battle-tested. É aí que o Keycloak entra.
+**O que o leitor vai perceber:** a separação melhora o design, mas o `auth-service` ainda é código que precisa ser mantido — rotação de chaves, armazenamento seguro de senhas, múltiplos clients. Uma solução battle-tested faz mais sentido.
 
 ---
 
 ### Fase 3 — `fase/3-keycloak-setup`
-**Substituição pelo Keycloak**
+**Evolução: Keycloak como Identity Provider**
 
-O Auth Service feito à mão é aposentado. O Keycloak assume como Identity Provider. O Resource Server continua o mesmo, mas agora valida tokens emitidos pelo Keycloak.
-
-**O que você vai construir:**
-- Keycloak rodando via Docker Compose
-- Realm, Client e usuários de teste configurados
-- Resource Server atualizado para validar tokens via JWKS do Keycloak
-- Scripts ou collection HTTP para testar o fluxo de login diretamente
-
-**Configuração do Keycloak:**
+O `auth-service` feito à mão é aposentado. O Keycloak assume como IdP via Docker. O `resource-server` valida tokens via JWKS do Keycloak.
 
 ```mermaid
 graph TD
     KC[Keycloak]
-
     KC --> R[Realm: lab-realm]
-    R --> C1[Client: backend-client]
+    R --> C1[Client: resource-server]
     R --> C2[Client: frontend-client]
-    R --> U[Usuário de teste]
+    R --> C3[Client: worker-client]
+    R --> U[Usuários de teste]
     R --> RO1[Role: admin]
-    R --> RO2[Role: viewer]
+    R --> RO2[Role: usuario]
 ```
 
-**Endpoints importantes que o Keycloak expõe:**
+**Endpoints do Keycloak utilizados:**
 
 | Endpoint | Descrição |
 |---|---|
-| `/.well-known/openid-configuration` | Discovery document com todos os endpoints |
+| `/.well-known/openid-configuration` | Discovery document |
 | `/protocol/openid-connect/token` | Emissão de tokens |
 | `/protocol/openid-connect/auth` | Endpoint de autorização (redirect) |
-| `/protocol/openid-connect/userinfo` | Informações do usuário autenticado |
 | `/protocol/openid-connect/certs` | JWKS — chaves públicas para validar tokens |
 | `/protocol/openid-connect/logout` | Encerramento de sessão |
 
 ---
 
 ### Fase 4 — `fase/4-authorization-code-pkce`
-**Authorization Code Flow + PKCE**
+**Fluxo 1: Authorization Code + PKCE**
 
-O fluxo principal para aplicações públicas (SPAs e apps mobile). O frontend React entra em cena para demonstrar o fluxo completo com redirecionamento para o Keycloak.
-
-**O que você vai construir:**
-- Frontend React com botão de login que redireciona para o Keycloak
-- Página de callback que processa o retorno do Keycloak
-- Exibição das informações do usuário (claims do `id_token`)
-- Consumo da rota protegida do Resource Server com o `access_token`
-
-**Por que PKCE?**
-
-O PKCE (_Proof Key for Code Exchange_) resolve um problema específico de clients públicos: como garantir que quem trocou o `authorization_code` por um token é o mesmo client que iniciou o fluxo, se não há como guardar um `client_secret` com segurança?
+O frontend React entra em cena. O usuário é redirecionado ao Keycloak para login e retorna com tokens.
 
 ```mermaid
 sequenceDiagram
-    actor User
+    actor Usuario
     participant SPA as Frontend (React)
     participant KC as Keycloak
-    participant API as Resource Server
+    participant RS as Resource Server
 
     SPA->>SPA: Gera code_verifier e code_challenge
-    User->>SPA: Clica em "Login"
-    SPA->>KC: Redirect para /auth?code_challenge=...
-    KC-->>User: Exibe tela de login
-    User->>KC: Informa credenciais
-    KC-->>SPA: Redirect para /callback?code=...
+    Usuario->>SPA: Clica em "Entrar"
+    SPA->>KC: Redirect /auth?code_challenge=...
+    KC-->>Usuario: Tela de login
+    Usuario->>KC: Credenciais
+    KC-->>SPA: Redirect /callback?code=...
 
     SPA->>KC: POST /token (code + code_verifier)
-    Note over KC: Valida code_challenge vs code_verifier
-    KC-->>SPA: access_token + id_token
+    KC-->>SPA: access_token + id_token + refresh_token
 
-    SPA->>API: GET /protected (Bearer access_token)
-    API->>KC: Busca JWKS e valida assinatura
-    API-->>SPA: 200 OK + dados protegidos
+    SPA->>RS: GET /tarefas (Bearer access_token)
+    RS->>KC: Busca JWKS e valida assinatura
+    RS-->>SPA: 200 OK + tarefas do usuário
 ```
-
-**O papel de cada token:**
 
 | Token | Quem usa | Para quê |
 |---|---|---|
-| `id_token` | Frontend | Saber quem é o usuário (nome, email, claims) |
+| `id_token` | Frontend | Identidade do usuário (nome, email, claims) |
 | `access_token` | Resource Server | Autorizar acesso a recursos protegidos |
 | `refresh_token` | Frontend | Renovar o `access_token` sem novo login |
 
 ---
 
 ### Fase 5 — `fase/5-client-credentials`
-**Client Credentials Flow**
+**Fluxo 2: Client Credentials (M2M)**
 
-O fluxo para comunicação máquina-a-máquina (M2M). Não há usuário envolvido — um serviço se autentica diretamente no Keycloak usando suas próprias credenciais.
-
-**O que você vai construir:**
-- Um segundo client no Keycloak (`service-client`) do tipo confidential
-- Um serviço Node.js (`worker`) que busca um token via Client Credentials
-- Uma rota no Resource Server acessível apenas por service clients
-- Validação de claims específicos para distinguir tokens de usuário de tokens de serviço
-
-**Quando usar:**
-- Jobs e workers que rodam sem interação do usuário
-- Comunicação entre microsserviços
-- CLIs e scripts automatizados
+Um `worker` Node.js autentica diretamente no Keycloak com `client_id` + `client_secret`, sem contexto de usuário. Acessa todas as tarefas do sistema e gera um relatório de status agregado.
 
 ```mermaid
 sequenceDiagram
-    participant W as Worker (Node.js)
+    participant W as Worker
     participant KC as Keycloak
-    participant API as Resource Server
+    participant RS as Resource Server
 
     W->>KC: POST /token
     Note over W,KC: grant_type=client_credentials<br/>client_id + client_secret
-    KC-->>W: access_token
+    KC-->>W: access_token (token de serviço)
 
-    W->>API: GET /api/internal (Bearer access_token)
-    API->>API: Valida JWT e verifica claims do serviço
-    API-->>W: 200 OK + dados
+    W->>RS: GET /relatorio/tarefas (Bearer access_token)
+    RS->>RS: Valida JWT e verifica ausência de sub de usuário
+    RS-->>W: 200 OK + { a_fazer: N, fazendo: N, feito: N }
 ```
 
-**Diferença em relação ao Authorization Code:**
-
-```mermaid
-graph LR
-    subgraph Authorization Code
-        U[Usuário] -->|delega acesso| C1[Client]
-        C1 -->|age em nome do usuário| A1[API]
-    end
-
-    subgraph Client Credentials
-        C2[Serviço] -->|age em nome próprio| A2[API]
-    end
-```
+**Quando usar Client Credentials:** jobs de background, comunicação entre microsserviços, CLIs automatizadas — qualquer cenário sem usuário interativo.
 
 ---
 
 ### Fase 6 — `fase/6-refresh-token`
-**Refresh Token e Gerenciamento de Sessão**
+**Fluxo 3: Refresh Token e gerenciamento de sessão**
 
 O `access_token` tem vida curta intencionalmente. O `refresh_token` resolve isso sem forçar um novo login a cada expiração.
 
-**O que você vai construir:**
-- Silent refresh no frontend: renovação automática do token antes de expirar
-- Logout federado: invalidar sessão no Keycloak, não só localmente
-- Demonstração de que um token revogado é rejeitado pelo Resource Server
-
-**Ciclo de vida dos tokens:**
-
 ```mermaid
 stateDiagram-v2
-    [*] --> Autenticado: Login (Authorization Code Flow)
+    [*] --> Autenticado: Login (Authorization Code + PKCE)
     Autenticado --> Renovando: access_token expira
     Renovando --> Autenticado: Usa refresh_token → novo access_token
-    Renovando --> [*]: refresh_token expirado → novo login necessário
-    Autenticado --> [*]: Logout (revoga tokens no Keycloak)
+    Renovando --> [*]: refresh_token expirado → novo login
+    Autenticado --> [*]: Logout federado (revoga sessão no Keycloak)
 ```
 
-**Logout local vs. logout federado:**
-
-| Tipo | O que faz | Resultado |
+| Tipo de logout | O que faz | Resultado |
 |---|---|---|
-| **Local** | Remove token do estado da SPA | Outros clients continuam logados |
-| **Federado** | Chama `end_session_endpoint` do Keycloak | Encerra sessão em todos os clients |
+| Local | Remove token do estado da SPA | Outros clients continuam logados |
+| Federado | Chama `end_session_endpoint` do Keycloak | Encerra sessão em todos os clients |
 
 ---
 
-## 🧩 Glossário
+## Qualidade e CI/CD
+
+O projeto é desenvolvido com **TDD** — todo código é precedido pelo teste. Dois pipelines automatizados no GitHub Actions garantem a integridade de cada fase:
+
+| Pipeline | Quando executa | O que faz |
+|---|---|---|
+| `ci.yml` | Todo push em `fase/*` e PRs | Lint + formatação + testes unitários/integração + validação OpenAPI |
+| `e2e.yml` | Merge para `main` e manual | Testes E2E com Keycloak via Docker |
+
+---
+
+## Documentação
+
+- **GitHub Pages:** visão geral, narrativa das fases, ADRs e glossário OAuth/OIDC — gerados com MkDocs + Material
+- **OpenAPI:** especificação de cada fase em `docs/openapi/openapi.yaml`, visualizável via Swagger UI local
+- **HTTP files:** arquivos `.http` e collection Postman em `docs/http/` para reproduzir todos os fluxos
+
+---
+
+## Glossário
 
 | Termo | Descrição |
 |---|---|
-| **OAuth 2.0** | Framework de *autorização* que permite que um app acesse recursos em nome de um usuário |
-| **OIDC** | Camada de *identidade* sobre OAuth 2.0 — adiciona autenticação e o `id_token` |
-| **Identity Provider (IdP)** | Serviço responsável por autenticar usuários e emitir tokens (ex: Keycloak) |
+| **OAuth 2.0** | Framework de autorização que permite que um app acesse recursos em nome de um usuário |
+| **OIDC** | Camada de identidade sobre OAuth 2.0 — adiciona autenticação e o `id_token` |
+| **Identity Provider (IdP)** | Serviço responsável por autenticar usuários e emitir tokens |
 | **Authorization Server** | O servidor que emite tokens dentro do fluxo OAuth |
 | **Resource Server** | A API que consome e valida tokens |
 | **Client** | A aplicação que solicita acesso (SPA, serviço, CLI) |
@@ -313,19 +261,20 @@ stateDiagram-v2
 | **ID Token** | JWT com claims de identidade do usuário (exclusivo do OIDC) |
 | **Refresh Token** | Token de longa duração usado para renovar o access token |
 | **PKCE** | Extensão de segurança para o Authorization Code Flow em clients públicos |
-| **Scope** | Permissões que o client solicita ao Authorization Server (ex: `openid profile email`) |
+| **Scope** | Permissões que o client solicita ao Authorization Server |
 | **Claim** | Atributo no payload de um JWT (ex: `sub`, `email`, `roles`) |
-| **JWKS** | Conjunto de chaves públicas do Authorization Server para verificar assinaturas de tokens |
+| **JWKS** | Conjunto de chaves públicas do Authorization Server para verificar assinaturas |
 | **Realm** | Unidade de isolamento no Keycloak (agrupa usuários, clients e configurações) |
 | **Grant Type** | O tipo de fluxo OAuth sendo utilizado |
 
 ---
 
-## 📚 Referências
+## Referências
 
-- [OAuth 2.0 Simplified — Aaron Parecki](https://www.oauth.com/) — melhor recurso introdutório
-- [An Illustrated Guide to OAuth and OpenID Connect — Okta](https://developer.okta.com/blog/2019/10/21/illustrated-guide-to-oauth-and-oidc)
 - [OAuth 2.0 — RFC 6749](https://datatracker.ietf.org/doc/html/rfc6749)
 - [OpenID Connect Core Spec](https://openid.net/specs/openid-connect-core-1_0.html)
+- [OAuth 2.0 Simplified — Aaron Parecki](https://www.oauth.com/)
 - [Keycloak Documentation](https://www.keycloak.org/documentation)
-- [jwt.io](https://jwt.io) — inspecionar e decodificar JWTs manualmente
+- [jose — documentação oficial](https://github.com/panva/jose)
+- [oidc-client-ts — documentação oficial](https://github.com/authts/oidc-client-ts)
+- [jwt.io](https://jwt.io) — inspecionar e decodificar JWTs
